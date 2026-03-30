@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rock Paper Scissors</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      gap: 28px;
+      padding: 32px 16px;
+    }
+
+    h1 {
+      font-size: 2rem;
+      letter-spacing: 2px;
+      color: #e94560;
+    }
+
+    /* ── Name modal ── */
+    #name-modal {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100;
+    }
+
+    .modal-box {
+      background: #16213e;
+      border: 2px solid #0f3460;
+      border-radius: 16px;
+      padding: 40px 48px;
+      text-align: center;
+      display: flex; flex-direction: column; gap: 20px;
+      min-width: 320px;
+    }
+
+    .modal-box h2 { color: #e94560; font-size: 1.4rem; }
+    .modal-box p  { color: #aaa; font-size: 0.95rem; }
+
+    .modal-box input {
+      background: #0f3460;
+      border: 2px solid #0f3460;
+      border-radius: 8px;
+      color: #eee;
+      font-size: 1.1rem;
+      padding: 10px 16px;
+      outline: none;
+      text-align: center;
+      transition: border-color 0.15s;
+    }
+
+    .modal-box input:focus { border-color: #e94560; }
+
+    .modal-box button {
+      background: #e94560;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 12px;
+      transition: opacity 0.15s;
+    }
+
+    .modal-box button:hover { opacity: 0.85; }
+
+    /* ── Scoreboard ── */
+    .scoreboard {
+      display: flex;
+      gap: 40px;
+      background: #16213e;
+      padding: 14px 36px;
+      border-radius: 12px;
+      font-size: 1.1rem;
+    }
+
+    .score-item { text-align: center; }
+    .score-item span { display: block; font-size: 2rem; font-weight: bold; color: #e94560; }
+
+    /* ── Arena ── */
+    .arena {
+      display: flex;
+      align-items: center;
+      gap: 48px;
+      background: #16213e;
+      padding: 24px 48px;
+      border-radius: 16px;
+      min-width: 360px;
+      justify-content: center;
+    }
+
+    .player-side, .cpu-side { text-align: center; }
+
+    .player-side label, .cpu-side label {
+      display: block;
+      font-size: 0.85rem;
+      letter-spacing: 1px;
+      color: #aaa;
+      margin-bottom: 8px;
+    }
+
+    .player-side .name-tag {
+      font-size: 0.8rem;
+      color: #e94560;
+      margin-top: 4px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .emoji-display {
+      font-size: 4rem;
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .vs { font-size: 1.5rem; font-weight: bold; color: #e94560; }
+
+    .result {
+      font-size: 1.6rem;
+      font-weight: bold;
+      min-height: 40px;
+      letter-spacing: 1px;
+    }
+
+    .result.win  { color: #4ade80; }
+    .result.lose { color: #f87171; }
+    .result.draw { color: #facc15; }
+
+    /* ── Choices ── */
+    .choices { display: flex; gap: 24px; }
+
+    .choice-btn {
+      background: #16213e;
+      border: 3px solid #0f3460;
+      border-radius: 16px;
+      padding: 20px 28px;
+      font-size: 3rem;
+      cursor: pointer;
+      transition: transform 0.15s, border-color 0.15s, background 0.15s;
+      user-select: none;
+    }
+
+    .choice-btn:hover  { border-color: #e94560; background: #0f3460; transform: scale(1.1); }
+    .choice-btn:active { transform: scale(0.95); }
+
+    /* ── Buttons row ── */
+    .btn-row { display: flex; gap: 12px; }
+
+    .outline-btn {
+      background: transparent;
+      border: 2px solid #e94560;
+      color: #e94560;
+      padding: 8px 20px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      letter-spacing: 1px;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .outline-btn:hover { background: #e94560; color: #fff; }
+
+    /* ── Leaderboard ── */
+    #leaderboard {
+      background: #16213e;
+      border-radius: 16px;
+      padding: 24px 32px;
+      width: 100%;
+      max-width: 520px;
+    }
+
+    #leaderboard h2 {
+      font-size: 1.1rem;
+      letter-spacing: 2px;
+      color: #e94560;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+
+    #leaderboard table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+
+    #leaderboard th {
+      color: #aaa;
+      font-weight: 600;
+      padding: 6px 8px;
+      text-align: right;
+      border-bottom: 1px solid #0f3460;
+    }
+
+    #leaderboard th:first-child { text-align: left; }
+
+    #leaderboard td {
+      padding: 8px 8px;
+      text-align: right;
+      border-bottom: 1px solid #0f346040;
+    }
+
+    #leaderboard td:first-child { text-align: left; }
+
+    #leaderboard tr:first-child td .medal { margin-right: 6px; }
+
+    #leaderboard .empty {
+      text-align: center;
+      color: #555;
+      padding: 20px 0;
+    }
+
+    /* ── Shake animation ── */
+    .shake { animation: shake 0.4s ease; }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-8px) rotate(-5deg); }
+      40% { transform: translateX(8px) rotate(5deg); }
+      60% { transform: translateX(-6px) rotate(-3deg); }
+      80% { transform: translateX(6px) rotate(3deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Name modal -->
+  <div id="name-modal">
+    <div class="modal-box">
+      <h2>Welcome!</h2>
+      <p>Enter your name to track your all-time score on the leaderboard.</p>
+      <input id="name-input" type="text" placeholder="Your name" maxlength="24" autocomplete="off">
+      <button onclick="submitName()">Let's play</button>
+    </div>
+  </div>
+
+  <h1>Rock Paper Scissors</h1>
+
+  <div class="scoreboard">
+    <div class="score-item">You<span id="score-you">0</span></div>
+    <div class="score-item">Draws<span id="score-draw">0</span></div>
+    <div class="score-item">CPU<span id="score-cpu">0</span></div>
+  </div>
+
+  <div class="arena">
+    <div class="player-side">
+      <label>YOU</label>
+      <div class="emoji-display" id="player-emoji">❓</div>
+      <div class="name-tag" id="player-name-tag"></div>
+    </div>
+    <div class="vs">VS</div>
+    <div class="cpu-side">
+      <label>CPU</label>
+      <div class="emoji-display" id="cpu-emoji">❓</div>
+    </div>
+  </div>
+
+  <div class="result" id="result"></div>
+
+  <div class="choices">
+    <button class="choice-btn" onclick="play('rock')"     title="Rock">✊</button>
+    <button class="choice-btn" onclick="play('paper')"    title="Paper">✋</button>
+    <button class="choice-btn" onclick="play('scissors')" title="Scissors">✌️</button>
+  </div>
+
+  <div class="btn-row">
+    <button class="outline-btn" onclick="resetSession()">Reset Session</button>
+    <button class="outline-btn" onclick="changeName()">Change Name</button>
+  </div>
+
+  <div id="leaderboard">
+    <h2>ALL-TIME LEADERBOARD</h2>
+    <div id="leaderboard-body"><p class="empty">No scores yet.</p></div>
+  </div>
+
+  <script>
+    const API = 'http://localhost:8765';
+    const emojis = { rock: '✊', paper: '✋', scissors: '✌️' };
+    const options = ['rock', 'paper', 'scissors'];
+    const wins    = { rock: 'scissors', paper: 'rock', scissors: 'paper' };
+    const medals  = ['🥇', '🥈', '🥉'];
+
+    let playerName = '';
+    let session = { you: 0, draw: 0, cpu: 0 };
+
+    // ── Name modal ──────────────────────────────────────────
+    document.getElementById('name-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') submitName();
+    });
+
+    function submitName() {
+      const val = document.getElementById('name-input').value.trim();
+      if (!val) { document.getElementById('name-input').focus(); return; }
+      playerName = val;
+      document.getElementById('name-modal').style.display = 'none';
+      document.getElementById('player-name-tag').textContent = playerName;
+      loadLeaderboard();
+    }
+
+    function changeName() {
+      document.getElementById('name-input').value = '';
+      document.getElementById('name-modal').style.display = 'flex';
+      document.getElementById('name-input').focus();
+    }
+
+    // ── Game ────────────────────────────────────────────────
+    function play(playerChoice) {
+      const cpuChoice = options[Math.floor(Math.random() * 3)];
+      const playerEl  = document.getElementById('player-emoji');
+      const cpuEl     = document.getElementById('cpu-emoji');
+      const resultEl  = document.getElementById('result');
+
+      playerEl.textContent = emojis[playerChoice];
+      cpuEl.textContent    = emojis[cpuChoice];
+
+      playerEl.classList.remove('shake');
+      cpuEl.classList.remove('shake');
+      void playerEl.offsetWidth;
+      playerEl.classList.add('shake');
+      cpuEl.classList.add('shake');
+
+      let outcome, cls, apiResult;
+      if (playerChoice === cpuChoice) {
+        outcome = 'Draw!'; cls = 'draw'; apiResult = 'draw';
+        session.draw++;
+      } else if (wins[playerChoice] === cpuChoice) {
+        outcome = 'You win!'; cls = 'win'; apiResult = 'win';
+        session.you++;
+      } else {
+        outcome = 'CPU wins!'; cls = 'lose'; apiResult = 'loss';
+        session.cpu++;
+      }
+
+      resultEl.textContent = outcome;
+      resultEl.className   = 'result ' + cls;
+
+      document.getElementById('score-you').textContent  = session.you;
+      document.getElementById('score-draw').textContent = session.draw;
+      document.getElementById('score-cpu').textContent  = session.cpu;
+
+      postScore(apiResult);
+    }
+
+    // ── API calls ───────────────────────────────────────────
+    async function postScore(result) {
+      try {
+        await fetch(`${API}/score`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: playerName, result }),
+        });
+        loadLeaderboard();
+      } catch {
+        // Server not running — leaderboard unavailable
+      }
+    }
+
+    async function loadLeaderboard() {
+      try {
+        const res  = await fetch(`${API}/leaderboard`);
+        const data = await res.json();
+        renderLeaderboard(data);
+      } catch {
+        document.getElementById('leaderboard-body').innerHTML =
+          '<p class="empty">Start the server (python3 server.py) to enable the leaderboard.</p>';
+      }
+    }
+
+    function renderLeaderboard(ranking) {
+      const el = document.getElementById('leaderboard-body');
+      if (!ranking.length) {
+        el.innerHTML = '<p class="empty">No scores yet.</p>';
+        return;
+      }
+
+      const rows = ranking.map((p, i) => {
+        const medal = medals[i] ?? `${i + 1}.`;
+        const highlight = p.name === playerName ? 'style="color:#e94560;font-weight:bold"' : '';
+        return `<tr>
+          <td ${highlight}><span class="medal">${medal}</span>${escHtml(p.name)}</td>
+          <td ${highlight}>${p.wins}</td>
+          <td ${highlight}>${p.losses}</td>
+          <td ${highlight}>${p.draws}</td>
+          <td ${highlight}>${p.total}</td>
+          <td ${highlight}>${p.win_rate}%</td>
+        </tr>`;
+      }).join('');
+
+      el.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Wins</th>
+              <th>Losses</th>
+              <th>Draws</th>
+              <th>Games</th>
+              <th>Win %</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function resetSession() {
+      session = { you: 0, draw: 0, cpu: 0 };
+      document.getElementById('score-you').textContent  = 0;
+      document.getElementById('score-draw').textContent = 0;
+      document.getElementById('score-cpu').textContent  = 0;
+      document.getElementById('player-emoji').textContent = '❓';
+      document.getElementById('cpu-emoji').textContent    = '❓';
+      document.getElementById('result').textContent = '';
+      document.getElementById('result').className   = 'result';
+    }
+  </script>
+</body>
+</html>
