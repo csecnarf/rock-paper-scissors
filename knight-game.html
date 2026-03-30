@@ -1,0 +1,1225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Knight Runner</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: monospace;
+      background: #1a1a2e;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      gap: 20px;
+      padding: 20px;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      letter-spacing: 2px;
+      color: #e94560;
+    }
+
+    canvas {
+      border: 2px solid #0f3460;
+      image-rendering: pixelated;
+      background: #0d1b2a;
+    }
+
+    #info {
+      font-size: 0.9rem;
+      color: #aaa;
+      text-align: center;
+      max-width: 500px;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Knight Runner</h1>
+  <canvas id="gameCanvas" width="800" height="220"></canvas>
+  <div id="info">
+    <p><strong>SPACE / ↑</strong> = Jump (hold for super jump)</p>
+    <p><strong>↓</strong> = Crouch | <strong>X</strong> = Attack</p>
+  </div>
+
+  <script>
+    // ═══════════════════════════════════════════════════════════════
+    // STEP 2: Constants & Enums
+    // ═══════════════════════════════════════════════════════════════
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+
+    // Layout
+    const GROUND_Y = 175;
+    const SCALE = 3;
+    const KNIGHT_FIXED_X = 100;
+
+    // Game states
+    const STATE = {
+      MENU: 'menu',
+      PLAYING: 'playing',
+      GAMEOVER: 'gameover'
+    };
+
+    // Entity types
+    const ENTITY_TYPE = {
+      SPIKE: 'spike',
+      BEAM: 'beam',
+      VILLAIN: 'villain',
+      CIVILIAN: 'civilian'
+    };
+
+    // Physics
+    const GRAVITY = 1800;
+    const JUMP_VY = -550;
+    const JUMP_BOOST_ACCEL = -400;
+    const ATTACK_DURATION = 0.4;
+    const CROUCH_SCALE = 0.55;
+
+    // Difficulty
+    const INITIAL_SPEED = 280;
+    const MAX_SPEED = 620;
+
+    // Hitbox lookup table
+    const HITBOXES = {
+      run: { w: 24, h: 42, offsetX: 0, offsetY: 0 },
+      jump: { w: 24, h: 42, offsetX: 0, offsetY: 0 },
+      crouch: { w: 30, h: 21, offsetX: -3, offsetY: 21 },
+      attack: { w: 24, h: 42, offsetX: 0, offsetY: 0 },
+      dead: { w: 48, h: 24, offsetX: -12, offsetY: 18 }
+    };
+
+    // Colors
+    const C = {
+      SKIN: '#f4c09a',
+      ARMOR_LIGHT: '#9a9aac',
+      ARMOR_DARK: '#6a6a7c',
+      ARMOR: '#7a7a8c',
+      SWORD: '#c8c8d8',
+      DARK: '#3a3a4c',
+      RED: '#e94560',
+      GOLD: '#f0c040',
+      FLESH: '#d4a574',
+      GRASS_LIGHT: '#4a9c45',
+      GRASS: '#3a7c35',
+      GROUND: '#5a4a3a',
+      DIRT: '#4a3a2a',
+      SKY1: '#0d1b2a',
+      SKY2: '#1a2e4a',
+      CLOUD: '#d0d0e0',
+      STONE: '#5a5a6a'
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    // STEP 3: Sprite Data
+    // ═══════════════════════════════════════════════════════════════
+
+    const SPRITE_KNIGHT_RUN = [
+      // Frame 0 - left leg forward
+      [
+        [null, C.GOLD, C.GOLD, null, null, null, null, null],
+        [null, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null, null],
+        [null, C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, null, null, null],
+        [null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, C.DARK, C.DARK, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, null, null, C.FLESH, null, null],
+        [null, null, null, null, null, C.FLESH, null, null],
+        [C.DARK, C.DARK, null, null, null, null, null, C.ARMOR_DARK],
+        [C.DARK, C.DARK, null, null, null, null, null, C.ARMOR_DARK]
+      ],
+      // Frame 1 - balanced
+      [
+        [null, C.GOLD, C.GOLD, null, null, null, null, null],
+        [null, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null, null],
+        [null, C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, null, null, null],
+        [null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, C.DARK, C.DARK, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [C.FLESH, null, null, null, null, C.FLESH, null, null],
+        [C.DARK, C.DARK, null, null, C.DARK, C.DARK, null, null],
+        [C.DARK, C.DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null]
+      ],
+      // Frame 2 - right leg forward
+      [
+        [null, C.GOLD, C.GOLD, null, null, null, null, null],
+        [null, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null, null],
+        [null, C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, null, null, null],
+        [null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, C.DARK, C.DARK, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, null, null, C.FLESH, null, null],
+        [C.ARMOR_DARK, null, null, null, null, C.DARK, C.DARK, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.DARK, C.DARK, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null]
+      ],
+      // Frame 3 - slight variation
+      [
+        [null, C.GOLD, C.GOLD, null, null, null, null, null],
+        [null, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null, null],
+        [null, C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, null, null, null],
+        [null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, C.DARK, C.DARK, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [C.FLESH, null, null, null, C.FLESH, null, null, null],
+        [C.DARK, C.DARK, null, C.DARK, C.DARK, null, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, C.DARK, C.DARK, null, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null]
+      ]
+    ];
+
+    const SPRITE_KNIGHT_JUMP = [
+      [
+        [null, C.GOLD, C.GOLD, null, null, null, null, null],
+        [null, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null, null],
+        [null, C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, null, null, null],
+        [null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, C.DARK, C.DARK, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null],
+        [C.FLESH, C.FLESH, null, null, null, C.FLESH, C.FLESH, null],
+        [C.DARK, C.DARK, null, null, null, C.DARK, C.DARK, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null]
+      ]
+    ];
+
+    const SPRITE_KNIGHT_CROUCH = [
+      [
+        [null, C.GOLD, C.GOLD, null, null, null, null, null, null, null],
+        [C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null, null, null],
+        [C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, C.ARMOR, C.ARMOR, null, null, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.DARK, C.DARK, C.DARK, C.DARK, null, null],
+        [C.DARK, C.DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null]
+      ]
+    ];
+
+    const SPRITE_KNIGHT_ATTACK = [
+      // Frame 0 - wind up
+      [
+        [null, C.GOLD, C.GOLD, null, null, null, null, null, null, null, null, null, null, null],
+        [null, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null, null, null, null, null, null, null, null],
+        [null, C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, null, null, null, null, null, null, null, null, null],
+        [null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.SWORD, C.SWORD, null, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.SWORD, C.SWORD, null, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.SWORD, C.SWORD, null, null, null, null, null],
+        [null, null, C.DARK, C.DARK, null, null, null, C.SWORD, C.SWORD, null, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, C.SWORD, C.SWORD, null, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, C.SWORD, C.SWORD, null, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, C.SWORD, C.SWORD, null, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, C.SWORD, C.SWORD, null, null, null, null, null],
+        [null, null, null, null, null, C.FLESH, null, null, null, C.FLESH, null, null, null, null],
+        [C.ARMOR_DARK, null, null, null, null, C.DARK, C.DARK, null, null, C.DARK, C.DARK, null, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.DARK, C.DARK, null, null, C.DARK, C.DARK, null, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null]
+      ],
+      // Frame 1 - extending
+      [
+        [null, C.GOLD, C.GOLD, null, null, null, null, null, null, null, null, null, null, null],
+        [null, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null, null, null, null, null, null, null, null],
+        [null, C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, null, null, null, null, null, null, null, null, null],
+        [null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.SWORD, C.SWORD, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.SWORD, C.SWORD, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.SWORD, C.SWORD, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, C.DARK, C.DARK, null, null, C.SWORD, C.SWORD, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, C.SWORD, C.SWORD, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, C.SWORD, C.SWORD, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, C.SWORD, C.SWORD, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, C.SWORD, C.SWORD, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, null, null, C.FLESH, null, null, null, C.FLESH, null, null, null, null],
+        [null, null, null, null, null, C.DARK, C.DARK, null, null, C.DARK, C.DARK, null, null, null],
+        [C.FLESH, C.FLESH, null, null, null, C.DARK, C.DARK, null, null, C.DARK, C.DARK, null, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null]
+      ],
+      // Frame 2 - extended (active hitbox)
+      [
+        [null, C.GOLD, C.GOLD, null, null, null, null, null, null, null, null, null, null, null],
+        [null, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null, null, null, null, null, null, null, null],
+        [null, C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, null, null, null, null, null, null, null, null, null],
+        [null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.SWORD, C.SWORD, C.SWORD, C.SWORD, C.SWORD, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.SWORD, C.SWORD, C.SWORD, C.SWORD, C.SWORD, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.SWORD, C.SWORD, C.SWORD, C.SWORD, C.SWORD, null, null, null],
+        [null, null, C.DARK, C.DARK, null, null, C.SWORD, C.SWORD, C.SWORD, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, C.SWORD, C.SWORD, C.SWORD, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, C.SWORD, C.SWORD, C.SWORD, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, C.SWORD, C.SWORD, C.SWORD, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, C.SWORD, C.SWORD, C.SWORD, C.SWORD, C.SWORD, null, null, null],
+        [null, null, null, null, null, C.FLESH, null, null, null, C.FLESH, null, null, null, null],
+        [null, null, null, null, null, C.DARK, C.DARK, null, null, C.DARK, C.DARK, null, null, null],
+        [C.FLESH, C.FLESH, null, null, null, C.DARK, C.DARK, null, null, C.DARK, C.DARK, null, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null]
+      ]
+    ];
+
+    const SPRITE_KNIGHT_DEAD = [
+      [
+        [null, null, null, C.GOLD, C.GOLD, null, null, null, null, null, null, null, null, null, null, null],
+        [null, null, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null, null, null, null, null, null, null, null, null],
+        [null, null, C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, null, null, null, null, null, null, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null, null, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null, null, null, null, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null, null, null, null, null, null, null, null],
+        [null, null, C.DARK, C.DARK, null, null, null, null, null, null, null, null, null, null, null, null],
+        [C.FLESH, C.FLESH, null, null, null, null, null, C.FLESH, C.FLESH, null, null, null, null, null, null, null]
+      ]
+    ];
+
+    const SPRITE_VILLAIN_WALK = [
+      // Frame 0
+      [
+        [null, null, null, C.DARK, C.DARK, null, null, null, null],
+        [null, null, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null, null],
+        [null, null, C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null],
+        [null, null, C.DARK, C.DARK, null, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [C.FLESH, null, null, null, null, C.FLESH, null, null, null],
+        [C.DARK, C.DARK, null, null, null, null, null, C.ARMOR_DARK, null],
+        [C.DARK, C.DARK, null, null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null]
+      ],
+      // Frame 1
+      [
+        [null, null, null, C.DARK, C.DARK, null, null, null, null],
+        [null, null, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null, null],
+        [null, null, C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null],
+        [null, null, C.DARK, C.DARK, null, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [C.FLESH, null, null, null, C.FLESH, null, null, null, null],
+        [C.DARK, C.DARK, null, C.DARK, C.DARK, null, null, null, null],
+        [C.DARK, C.DARK, null, C.DARK, C.DARK, null, null, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null]
+      ],
+      // Frame 2
+      [
+        [null, null, null, C.DARK, C.DARK, null, null, null, null],
+        [null, null, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null, null],
+        [null, null, C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null],
+        [null, null, C.DARK, C.DARK, null, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, null, null, C.FLESH, null, null, null],
+        [null, null, null, null, null, null, null, C.ARMOR_DARK, null],
+        [C.ARMOR_DARK, null, null, null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null]
+      ],
+      // Frame 3
+      [
+        [null, null, null, C.DARK, C.DARK, null, null, null, null],
+        [null, null, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null, null],
+        [null, null, C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null],
+        [null, null, C.DARK, C.DARK, null, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [C.FLESH, null, null, null, C.FLESH, null, null, null, null],
+        [C.DARK, C.DARK, null, C.DARK, C.DARK, null, null, null, null],
+        [C.DARK, C.DARK, null, C.DARK, C.DARK, null, null, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null]
+      ]
+    ];
+
+    const SPRITE_VILLAIN_DIE = [
+      // Frame 0 - stumble
+      [
+        [null, null, null, C.DARK, C.DARK, null, null, null, null],
+        [null, null, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null, null],
+        [null, null, C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null],
+        [null, null, C.DARK, C.DARK, null, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [C.FLESH, C.FLESH, null, null, null, C.FLESH, null, null, null],
+        [C.DARK, C.DARK, null, null, null, C.DARK, C.DARK, null, null],
+        [C.DARK, C.DARK, null, null, C.DARK, C.DARK, C.DARK, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null]
+      ],
+      // Frame 1 - falling
+      [
+        [null, null, null, null, C.DARK, C.DARK, null, null, null],
+        [null, null, null, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null],
+        [null, null, null, C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, null, null],
+        [null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null],
+        [null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null],
+        [null, null, null, C.DARK, C.DARK, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, null, null, C.SWORD, C.SWORD, null, null, null, null],
+        [null, C.FLESH, C.FLESH, null, null, C.FLESH, null, null, null],
+        [null, C.DARK, C.DARK, null, null, C.DARK, C.DARK, null, null],
+        [null, C.DARK, C.DARK, null, null, C.DARK, C.DARK, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null],
+        [null, null, null, null, null, null, null, null, null],
+        [null, null, null, null, null, null, null, null, null]
+      ],
+      // Frame 2 - on ground
+      [
+        [null, null, null, C.DARK, C.DARK, null, null, null, null],
+        [null, null, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, C.ARMOR_LIGHT, null, null, null],
+        [null, null, C.ARMOR, C.SKIN, C.SKIN, C.ARMOR, null, null, null],
+        [null, null, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, null, null],
+        [C.DARK, C.DARK, C.DARK, C.DARK, null, null, null, null, null],
+        [C.FLESH, C.FLESH, null, null, null, C.FLESH, C.FLESH, null, null],
+        [C.DARK, C.DARK, null, null, null, C.DARK, C.DARK, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null],
+        [null, null, null, null, null, null, null, null, null],
+        [null, null, null, null, null, null, null, null, null],
+        [null, null, null, null, null, null, null, null, null],
+        [null, null, null, null, null, null, null, null, null],
+        [null, null, null, null, null, null, null, null, null]
+      ]
+    ];
+
+    const SPRITE_CIVILIAN_WALK = [
+      // Frame 0
+      [
+        [null, null, C.GOLD, C.GOLD, null, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.FLESH, C.FLESH, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.GOLD, C.RED, C.RED, C.GOLD, null, null],
+        [null, null, C.DARK, C.DARK, null, null, null],
+        [C.FLESH, null, null, null, C.FLESH, null, null],
+        [C.DARK, C.DARK, null, null, C.DARK, C.DARK, null],
+        [C.DARK, C.DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null]
+      ],
+      // Frame 1
+      [
+        [null, null, C.GOLD, C.GOLD, null, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.FLESH, C.FLESH, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.GOLD, C.RED, C.RED, C.GOLD, null, null],
+        [null, null, C.DARK, C.DARK, null, null, null],
+        [C.FLESH, null, null, null, C.FLESH, null, null],
+        [C.DARK, C.DARK, null, C.DARK, C.DARK, null, null],
+        [C.DARK, C.DARK, null, C.DARK, C.DARK, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null]
+      ],
+      // Frame 2
+      [
+        [null, null, C.GOLD, C.GOLD, null, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.FLESH, C.FLESH, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.GOLD, C.RED, C.RED, C.GOLD, null, null],
+        [null, null, C.DARK, C.DARK, null, null, null],
+        [C.FLESH, null, null, null, C.FLESH, null, null],
+        [C.DARK, C.DARK, null, null, C.DARK, C.DARK, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.DARK, C.DARK, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, null, C.ARMOR_DARK, C.ARMOR_DARK, null]
+      ],
+      // Frame 3
+      [
+        [null, null, C.GOLD, C.GOLD, null, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.FLESH, C.FLESH, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.RED, C.RED, C.RED, C.RED, null, null],
+        [null, C.GOLD, C.RED, C.RED, C.GOLD, null, null],
+        [null, null, C.DARK, C.DARK, null, null, null],
+        [C.FLESH, null, null, null, C.FLESH, null, null],
+        [C.DARK, C.DARK, null, C.DARK, C.DARK, null, null],
+        [C.DARK, C.DARK, null, C.DARK, C.DARK, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null],
+        [C.ARMOR_DARK, C.ARMOR_DARK, null, C.ARMOR_DARK, C.ARMOR_DARK, null, null]
+      ]
+    ];
+
+    const SPRITE_SPIKE = [
+      [
+        [null, null, null, C.STONE, null, null, null, null, null],
+        [null, null, C.STONE, C.STONE, C.STONE, null, null, null, null],
+        [null, C.STONE, C.STONE, C.STONE, C.STONE, C.STONE, null, null, null],
+        [C.STONE, C.STONE, C.STONE, C.STONE, C.STONE, C.STONE, C.STONE, null, null],
+        [C.STONE, C.STONE, C.STONE, C.STONE, C.STONE, C.STONE, C.STONE, C.STONE, null],
+        [C.STONE, C.STONE, C.STONE, C.STONE, C.STONE, C.STONE, C.STONE, C.STONE, C.STONE],
+        [C.DARK, C.DARK, C.DARK, C.DARK, C.DARK, C.DARK, C.DARK, C.DARK, C.DARK],
+        [C.DARK, C.DARK, C.DARK, C.DARK, C.DARK, C.DARK, C.DARK, C.DARK, C.DARK],
+        [null, null, C.DARK, C.DARK, C.DARK, C.DARK, C.DARK, null, null],
+        [null, null, C.DARK, C.DARK, C.DARK, C.DARK, C.DARK, null, null]
+      ]
+    ];
+
+    const SPRITE_BEAM = [
+      [
+        [C.STONE, C.STONE],
+        [C.STONE, C.STONE],
+        [C.STONE, C.STONE],
+        [C.STONE, C.STONE],
+        [C.DARK, C.DARK],
+        [C.DARK, C.DARK],
+        [C.DARK, C.DARK],
+        [C.DARK, C.DARK],
+        [C.STONE, C.STONE],
+        [C.STONE, C.STONE],
+        [C.STONE, C.STONE],
+        [C.STONE, C.STONE],
+        [C.STONE, C.STONE],
+        [C.STONE, C.STONE]
+      ]
+    ];
+
+    const SPRITE_CLOUD = [
+      [
+        [null, null, C.CLOUD, C.CLOUD, C.CLOUD, null, null, null, null, null, null, null, null, null, null, null],
+        [null, C.CLOUD, C.CLOUD, C.CLOUD, C.CLOUD, C.CLOUD, null, null, null, null, null, null, null, null, null, null],
+        [C.CLOUD, C.CLOUD, C.CLOUD, C.CLOUD, C.CLOUD, C.CLOUD, C.CLOUD, null, null, null, null, null, null, null, null, null],
+        [C.CLOUD, C.CLOUD, C.CLOUD, C.CLOUD, C.CLOUD, C.CLOUD, C.CLOUD, null, null, null, null, null, null, null, null, null],
+        [null, C.CLOUD, C.CLOUD, C.CLOUD, C.CLOUD, C.CLOUD, null, null, null, null, null, null, null, null, null, null],
+        [null, null, C.CLOUD, C.CLOUD, C.CLOUD, null, null, null, null, null, null, null, null, null, null, null]
+      ]
+    ];
+
+    // ═══════════════════════════════════════════════════════════════
+    // Sprite Rendering
+    // ═══════════════════════════════════════════════════════════════
+
+    function drawSprite(ctx, frames, frameIdx, x, y, scale = 3, flipX = false) {
+      if (frameIdx >= frames.length) frameIdx = frames.length - 1;
+      const frame = frames[frameIdx];
+      const rows = frame.length;
+      const cols = frame[0].length;
+
+      if (flipX) {
+        ctx.save();
+        ctx.translate(x + cols * scale, y);
+        ctx.scale(-1, 1);
+        x = 0;
+      }
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const color = frame[row][col];
+          if (color === null) continue;
+          ctx.fillStyle = color;
+          ctx.fillRect(x + col * scale, y + row * scale, scale, scale);
+        }
+      }
+
+      if (flipX) ctx.restore();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Background & Parallax
+    // ═══════════════════════════════════════════════════════════════
+
+    let bgTowers = Array.from({ length: 12 }, (_, i) => ({
+      x: i * 200,
+      w: 12,
+      h: 40,
+      color: '#1a2535'
+    }));
+
+    let bgClouds = Array.from({ length: 5 }, (_, i) => ({
+      x: i * 200,
+      y: 40 + Math.random() * 50
+    }));
+
+    let groundOffset = 0;
+
+    function drawBackground(gameSpeed, dt) {
+      // Sky gradient
+      const grad = ctx.createLinearGradient(0, 0, 0, H);
+      grad.addColorStop(0, C.SKY1);
+      grad.addColorStop(1, C.SKY2);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+
+      // Towers
+      for (let i = 0; i < bgTowers.length; i++) {
+        bgTowers[i].x -= gameSpeed * 0.1 * dt;
+        if (bgTowers[i].x < -bgTowers[i].w) {
+          bgTowers[i].x += bgTowers.length * 200;
+        }
+        ctx.fillStyle = bgTowers[i].color;
+        ctx.fillRect(bgTowers[i].x, GROUND_Y - bgTowers[i].h, bgTowers[i].w, bgTowers[i].h);
+      }
+
+      // Clouds
+      for (let i = 0; i < bgClouds.length; i++) {
+        bgClouds[i].x -= gameSpeed * 0.3 * dt;
+        if (bgClouds[i].x < -100) {
+          bgClouds[i].x += bgClouds.length * 200;
+        }
+        drawSprite(ctx, SPRITE_CLOUD, 0, bgClouds[i].x, bgClouds[i].y, 2);
+      }
+
+      // Ground
+      ctx.fillStyle = C.GROUND;
+      ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+
+      // Grass tiles
+      groundOffset = (groundOffset + gameSpeed * dt) % (8 * SCALE);
+      ctx.fillStyle = C.GRASS;
+      for (let x = -groundOffset; x < W; x += 8 * SCALE) {
+        ctx.fillRect(x, GROUND_Y, 8 * SCALE, 4);
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // STEP 5: Knight Class
+    // ═══════════════════════════════════════════════════════════════
+
+    class Knight {
+      constructor() {
+        this.x = KNIGHT_FIXED_X;
+        this.y = GROUND_Y;
+        this.vy = 0;
+        this.state = 'run';
+        this.stateTimer = 0;
+        this.jumpHeld = false;
+        this.jumpHeldTime = 0;
+        this.frameTimer = 0;
+        this.frame = 0;
+        this.dead = false;
+      }
+
+      update(dt, keys, justPressed) {
+        // Jump input
+        if (this.state === 'run' && (justPressed.has('Space') || justPressed.has('ArrowUp'))) {
+          this.state = 'jump';
+          this.vy = JUMP_VY;
+          this.jumpHeld = true;
+          this.jumpHeldTime = 0;
+        }
+
+        // Boost while jump held
+        if (this.state === 'jump' && (keys['Space'] || keys['ArrowUp'])) {
+          this.jumpHeldTime += dt;
+          if (this.jumpHeldTime < 0.25) {
+            this.vy += JUMP_BOOST_ACCEL * dt;
+          }
+        } else {
+          this.jumpHeld = false;
+        }
+
+        // Crouch input
+        if (this.state === 'run' && keys['ArrowDown']) {
+          this.state = 'crouch';
+        }
+        if (this.state === 'crouch' && !keys['ArrowDown']) {
+          this.state = 'run';
+        }
+
+        // Attack input
+        if (this.state === 'run' && justPressed.has('KeyX')) {
+          this.state = 'attack';
+          this.stateTimer = 0;
+        }
+
+        if (this.state === 'attack') {
+          this.stateTimer += dt;
+          if (this.stateTimer >= ATTACK_DURATION) {
+            this.state = 'run';
+          }
+        }
+
+        // Gravity & movement
+        if (this.state === 'jump' || this.y < GROUND_Y) {
+          this.vy += GRAVITY * dt;
+          this.y += this.vy * dt;
+        }
+
+        if (this.y >= GROUND_Y) {
+          this.y = GROUND_Y;
+          this.vy = 0;
+          if (this.state === 'jump') {
+            this.state = 'run';
+          }
+        }
+
+        // Animation
+        const animSpeeds = {
+          run: 0.10,
+          jump: 0.15,
+          crouch: 0.15,
+          attack: 0.09,
+          dead: 0.2
+        };
+
+        const frameCount = {
+          run: 4,
+          jump: 1,
+          crouch: 1,
+          attack: 3,
+          dead: 1
+        };
+
+        this.frameTimer += dt;
+        if (this.frameTimer >= animSpeeds[this.state]) {
+          this.frameTimer = 0;
+          this.frame = (this.frame + 1) % frameCount[this.state];
+        }
+      }
+
+      draw(ctx) {
+        const sprites = {
+          run: SPRITE_KNIGHT_RUN,
+          jump: SPRITE_KNIGHT_JUMP,
+          crouch: SPRITE_KNIGHT_CROUCH,
+          attack: SPRITE_KNIGHT_ATTACK,
+          dead: SPRITE_KNIGHT_DEAD
+        };
+
+        const sprite = sprites[this.state];
+        const hb = HITBOXES[this.state];
+        const spriteY = this.y - (sprite[0].length - 1) * SCALE;
+
+        drawSprite(ctx, sprite, this.frame, this.x + hb.offsetX, spriteY, SCALE);
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // STEP 6: Input System
+    // ═══════════════════════════════════════════════════════════════
+
+    const keys = {};
+    let justPressed = new Set();
+
+    window.addEventListener('keydown', (e) => {
+      if (!keys[e.code]) {
+        justPressed.add(e.code);
+      }
+      keys[e.code] = true;
+      e.preventDefault();
+    });
+
+    window.addEventListener('keyup', (e) => {
+      keys[e.code] = false;
+    });
+
+    // ═══════════════════════════════════════════════════════════════
+    // STEP 7: Entity System
+    // ═══════════════════════════════════════════════════════════════
+
+    function createEntity(type, x) {
+      const entities = [];
+
+      if (type === ENTITY_TYPE.SPIKE) {
+        entities.push({
+          type: ENTITY_TYPE.SPIKE,
+          x: x,
+          y: GROUND_Y - 10 * SCALE,
+          w: 9 * SCALE,
+          h: 10 * SCALE,
+          frame: 0,
+          frameTimer: 0,
+          dead: false
+        });
+      } else if (type === ENTITY_TYPE.BEAM) {
+        entities.push({
+          type: ENTITY_TYPE.BEAM,
+          x: x,
+          y: GROUND_Y - 42 * SCALE,
+          w: 2 * SCALE,
+          h: 42 * SCALE,
+          frame: 0,
+          frameTimer: 0,
+          dead: false
+        });
+      } else if (type === ENTITY_TYPE.VILLAIN) {
+        entities.push({
+          type: ENTITY_TYPE.VILLAIN,
+          x: x,
+          y: GROUND_Y - 15 * SCALE,
+          w: 9 * SCALE,
+          h: 15 * SCALE,
+          frame: 0,
+          frameTimer: 0,
+          health: 1,
+          dyingTimer: 0,
+          dead: false
+        });
+      } else if (type === ENTITY_TYPE.CIVILIAN) {
+        // Spawn 3 civilians in a group
+        for (let i = 0; i < 3; i++) {
+          entities.push({
+            type: ENTITY_TYPE.CIVILIAN,
+            x: x + i * 24,
+            y: GROUND_Y - 16 * SCALE,
+            w: 7 * SCALE,
+            h: 16 * SCALE,
+            frame: 0,
+            frameTimer: 0,
+            groupId: Date.now(),
+            dead: false
+          });
+        }
+      }
+
+      return entities;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // STEP 8: Collision Detection
+    // ═══════════════════════════════════════════════════════════════
+
+    function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+      return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+    }
+
+    function getKnightHitbox(knight) {
+      const hb = HITBOXES[knight.state];
+      return {
+        x: knight.x + hb.offsetX,
+        y: knight.y - (SPRITE_KNIGHT_RUN[0].length - 1) * SCALE + hb.offsetY,
+        w: hb.w,
+        h: hb.h
+      };
+    }
+
+    function getEntityHitbox(entity) {
+      return { x: entity.x, y: entity.y, w: entity.w, h: entity.h };
+    }
+
+    function getSwordHitbox(knight) {
+      if (knight.state !== 'attack' || knight.stateTimer < 0.09 || knight.stateTimer >= 0.40) {
+        return null;
+      }
+      return {
+        x: knight.x + 24,
+        y: knight.y - 12 * SCALE,
+        w: 30,
+        h: 12
+      };
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Game State Management
+    // ═══════════════════════════════════════════════════════════════
+
+    let gameState = STATE.MENU;
+    let knight = new Knight();
+    let entities = [];
+    let score = 0;
+    let hiScore = parseInt(localStorage.getItem('knightHiScore') || '0');
+    let gameSpeed = INITIAL_SPEED;
+    let gameTime = 0;
+    let spawnTimer = 0;
+    let lastSpawnType = null;
+    let gameOverTimer = 0;
+    let shakeTimer = 0;
+
+    function resetGame() {
+      knight = new Knight();
+      entities = [];
+      score = 0;
+      gameSpeed = INITIAL_SPEED;
+      gameTime = 0;
+      spawnTimer = 0;
+      lastSpawnType = null;
+      gameState = STATE.PLAYING;
+    }
+
+    function triggerGameOver() {
+      if (score > hiScore) {
+        hiScore = Math.floor(score);
+        localStorage.setItem('knightHiScore', hiScore);
+      }
+      gameState = STATE.GAMEOVER;
+      knight.state = 'dead';
+      gameOverTimer = 0;
+      shakeTimer = 0.3;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // STEP 9: Attack & Collision Logic
+    // ═══════════════════════════════════════════════════════════════
+
+    function updateCollisions(knight, entities) {
+      const sword = getSwordHitbox(knight);
+
+      // Villain sword check
+      if (sword) {
+        for (const entity of entities) {
+          if (entity.type !== ENTITY_TYPE.VILLAIN || entity.dead) continue;
+          const eh = getEntityHitbox(entity);
+          if (rectsOverlap(sword.x, sword.y, sword.w, sword.h, eh.x, eh.y, eh.w, eh.h)) {
+            entity.dead = true;
+            entity.dyingTimer = 0;
+            score += 100;
+          }
+        }
+      }
+
+      // Body collision checks
+      const kh = getKnightHitbox(knight);
+      for (const entity of entities) {
+        if (entity.dead) continue;
+
+        const eh = getEntityHitbox(entity);
+        if (!rectsOverlap(kh.x, kh.y, kh.w, kh.h, eh.x, eh.y, eh.w, eh.h)) continue;
+
+        // Overlapping
+        if (entity.type === ENTITY_TYPE.SPIKE) {
+          triggerGameOver();
+        } else if (entity.type === ENTITY_TYPE.BEAM) {
+          if (knight.state !== 'crouch') {
+            triggerGameOver();
+          }
+        } else if (entity.type === ENTITY_TYPE.VILLAIN) {
+          triggerGameOver();
+        } else if (entity.type === ENTITY_TYPE.CIVILIAN) {
+          triggerGameOver();
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // STEP 10 & 12: Game Update Loop
+    // ═══════════════════════════════════════════════════════════════
+
+    function updateGame(dt) {
+      gameTime += dt;
+      gameSpeed = Math.min(INITIAL_SPEED + gameTime * 2.8, MAX_SPEED);
+
+      // Spawning
+      spawnTimer -= dt;
+      if (spawnTimer <= 0) {
+        const weights = {
+          spike: 0.35,
+          beam: 0.30,
+          villain: Math.min(0.15 + gameTime * 0.08 / 120, 0.25),
+          civilian: Math.min(0.05 + gameTime * 0.12 / 120, 0.20)
+        };
+
+        let r = Math.random();
+        let type = null;
+        let sum = 0;
+        for (const [t, w] of Object.entries(weights)) {
+          sum += w;
+          if (r < sum) {
+            type = t;
+            break;
+          }
+        }
+
+        if (type && type !== lastSpawnType) {
+          entities.push(...createEntity(type, W + 20));
+          lastSpawnType = type;
+        }
+
+        const minInterval = 1.8 - gameTime * 0.009;
+        const maxInterval = 3.5 - gameTime * 0.017;
+        spawnTimer = Math.max(minInterval, Math.random() * (maxInterval - minInterval) + minInterval);
+      }
+
+      // Knight update
+      knight.update(dt, keys, justPressed);
+
+      // Entity movement
+      for (const entity of entities) {
+        if (!entity.dead) {
+          entity.x -= gameSpeed * dt;
+        }
+        if (entity.type === ENTITY_TYPE.VILLAIN && entity.dyingTimer !== undefined) {
+          entity.dyingTimer += dt;
+          if (entity.dyingTimer >= 0.36) {
+            entity.dead = true;
+          }
+        }
+      }
+
+      // Remove off-screen entities
+      entities = entities.filter((e) => e.x + e.w > 0);
+
+      // Collision
+      updateCollisions(knight, entities);
+
+      // Score
+      score += gameSpeed * dt * 0.1;
+
+      // Animation for alive entities
+      for (const entity of entities) {
+        if (entity.dead) continue;
+
+        const animSpeeds = { spike: 0, beam: 0, villain: 0.12, civilian: 0.11 };
+        const frameCounts = { spike: 1, beam: 1, villain: 4, civilian: 4 };
+
+        if (animSpeeds[entity.type] > 0) {
+          entity.frameTimer += dt;
+          if (entity.frameTimer >= animSpeeds[entity.type]) {
+            entity.frameTimer = 0;
+            entity.frame = (entity.frame + 1) % frameCounts[entity.type];
+          }
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Draw Functions
+    // ═══════════════════════════════════════════════════════════════
+
+    function drawGame() {
+      drawBackground(gameSpeed, 0.016);
+
+      // Entities
+      for (const entity of entities) {
+        if (entity.type === ENTITY_TYPE.SPIKE) {
+          drawSprite(ctx, SPRITE_SPIKE, 0, entity.x, entity.y, SCALE);
+        } else if (entity.type === ENTITY_TYPE.BEAM) {
+          drawSprite(ctx, SPRITE_BEAM, 0, entity.x, entity.y, SCALE);
+        } else if (entity.type === ENTITY_TYPE.VILLAIN) {
+          const frames = entity.dyingTimer !== undefined ? SPRITE_VILLAIN_DIE : SPRITE_VILLAIN_WALK;
+          const frameIdx = entity.dyingTimer !== undefined ? Math.min(Math.floor(entity.dyingTimer / 0.12), 2) : entity.frame;
+          drawSprite(ctx, frames, frameIdx, entity.x, entity.y, SCALE, true);
+        } else if (entity.type === ENTITY_TYPE.CIVILIAN) {
+          drawSprite(ctx, SPRITE_CIVILIAN_WALK, entity.frame, entity.x, entity.y, SCALE);
+        }
+      }
+
+      // Knight
+      knight.draw(ctx);
+
+      // HUD
+      ctx.fillStyle = C.GOLD;
+      ctx.font = 'bold 16px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`SCORE: ${Math.floor(score)}`, W / 2, 25);
+
+      ctx.fillStyle = '#aaa';
+      ctx.font = '12px monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(`BEST: ${hiScore}`, W - 10, 25);
+
+      ctx.fillStyle = '#555';
+      ctx.textAlign = 'left';
+      ctx.fillText(`SPD ${Math.floor(gameSpeed)}`, 10, 25);
+    }
+
+    function drawMenu() {
+      drawBackground(gameSpeed, 0.016);
+      knight.draw(ctx);
+
+      ctx.fillStyle = C.GOLD;
+      ctx.font = 'bold 32px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('KNIGHT RUNNER', W / 2, 80);
+
+      ctx.fillStyle = '#aaa';
+      ctx.font = '12px monospace';
+      ctx.fillText('SPACE / ↑ = Jump (hold for super)', W / 2, 120);
+      ctx.fillText('↓ = Crouch | X = Attack', W / 2, 135);
+
+      const blink = Math.floor(Date.now() / 500) % 2;
+      if (blink) {
+        ctx.fillStyle = C.RED;
+        ctx.fillText('PRESS SPACE TO START', W / 2, 170);
+      }
+
+      ctx.fillStyle = '#555';
+      ctx.font = '12px monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(`BEST: ${hiScore}`, W - 10, 25);
+    }
+
+    function drawGameOver() {
+      gameOverTimer += 1;
+      drawBackground(gameSpeed, 0.016);
+
+      // Entities
+      for (const entity of entities) {
+        if (entity.type === ENTITY_TYPE.SPIKE) {
+          ctx.globalAlpha = 0.5;
+          drawSprite(ctx, SPRITE_SPIKE, 0, entity.x, entity.y, SCALE);
+          ctx.globalAlpha = 1;
+        } else if (entity.type === ENTITY_TYPE.BEAM) {
+          ctx.globalAlpha = 0.5;
+          drawSprite(ctx, SPRITE_BEAM, 0, entity.x, entity.y, SCALE);
+          ctx.globalAlpha = 1;
+        } else if (entity.type === ENTITY_TYPE.VILLAIN) {
+          ctx.globalAlpha = 0.5;
+          const frameIdx = 2;
+          drawSprite(ctx, SPRITE_VILLAIN_DIE, frameIdx, entity.x, entity.y, SCALE, true);
+          ctx.globalAlpha = 1;
+        } else if (entity.type === ENTITY_TYPE.CIVILIAN) {
+          ctx.globalAlpha = 0.5;
+          drawSprite(ctx, SPRITE_CIVILIAN_WALK, entity.frame, entity.x, entity.y, SCALE);
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      // Knight dead
+      ctx.globalAlpha = 0.7;
+      knight.draw(ctx);
+      ctx.globalAlpha = 1;
+
+      // Screen shake
+      let offsetX = 0;
+      if (shakeTimer > 0) {
+        offsetX = (Math.random() - 0.5) * 6;
+      }
+
+      // Overlay
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+      ctx.fillRect(0, 0, W, H);
+
+      // Text
+      ctx.fillStyle = C.RED;
+      ctx.font = 'bold 36px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('GAME OVER', W / 2, 80);
+
+      ctx.fillStyle = C.GOLD;
+      ctx.font = '20px monospace';
+      ctx.fillText(`FINAL SCORE: ${Math.floor(score)}`, W / 2, 120);
+
+      if (score > hiScore * 0.95 && hiScore > 0) {
+        ctx.fillStyle = C.GOLD;
+        ctx.font = 'bold 16px monospace';
+        ctx.fillText('NEW BEST!', W / 2, 145);
+      }
+
+      const blink2 = Math.floor(Date.now() / 500) % 2;
+      if (blink2) {
+        ctx.fillStyle = '#fff';
+        ctx.font = '12px monospace';
+        ctx.fillText('PRESS SPACE TO RESTART', W / 2, 175);
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Main Game Loop
+    // ═══════════════════════════════════════════════════════════════
+
+    let lastTime = 0;
+
+    function gameLoop(timestamp) {
+      const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+      lastTime = timestamp;
+
+      ctx.fillStyle = C.SKY1;
+      ctx.fillRect(0, 0, W, H);
+
+      if (gameState === STATE.MENU) {
+        gameSpeed = Math.min(gameSpeed + dt * 50, 100);
+        drawMenu();
+        if (justPressed.has('Space')) {
+          resetGame();
+        }
+      } else if (gameState === STATE.PLAYING) {
+        updateGame(dt);
+        drawGame();
+      } else if (gameState === STATE.GAMEOVER) {
+        shakeTimer = Math.max(shakeTimer - dt, 0);
+        drawGameOver();
+        if (justPressed.has('Space')) {
+          gameState = STATE.MENU;
+          gameSpeed = INITIAL_SPEED;
+          gameTime = 0;
+        }
+      }
+
+      justPressed.clear();
+      requestAnimationFrame(gameLoop);
+    }
+
+    requestAnimationFrame(gameLoop);
+  </script>
+
+</body>
+</html>
